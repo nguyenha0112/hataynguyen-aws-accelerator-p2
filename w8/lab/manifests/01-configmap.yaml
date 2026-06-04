@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: web-config
+  namespace: mini-platform
+data:
+  APP_NAME: "mini-k8s-platform"
+  APP_ENV: "local"
+
