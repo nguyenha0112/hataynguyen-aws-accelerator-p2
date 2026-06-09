@@ -1,0 +1,29 @@
+name: W9 GitOps CI
+
+on:
+  pull_request:
+    paths:
+      - "cloud/w9/**"
+  push:
+    branches:
+      - main
+    paths:
+      - "cloud/w9/**"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install kubeconform
+        run: |
+          curl -L -o kubeconform.tar.gz https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz
+          tar -xzf kubeconform.tar.gz
+          sudo mv kubeconform /usr/local/bin/kubeconform
+
+      - name: Validate Kubernetes manifests
+        run: |
+          kubeconform -strict -summary -ignore-missing-schemas cloud/w9/lab/manifests cloud/w9/lab/argocd cloud/w9/lab/rollout
+

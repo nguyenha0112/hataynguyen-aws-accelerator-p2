@@ -1,0 +1,27 @@
+{
+  "title": "W9 Web SLO",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Availability",
+      "targets": [
+        {
+          "expr": "1 - (sum(rate(http_requests_total{job=\"web\",status=~\"5..\"}[5m])) / sum(rate(http_requests_total{job=\"web\"}[5m])))"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Latency p95",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=\"web\"}[5m])) by (le))"
+        }
+      ]
+    }
+  ]
+}
+

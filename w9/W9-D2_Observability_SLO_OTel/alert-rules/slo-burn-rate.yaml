@@ -1,0 +1,46 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: web-slo-burn-rate
+  namespace: observability
+spec:
+  groups:
+    - name: web.slo
+      rules:
+        - alert: WebAvailabilityFastBurn
+          expr: |
+            (
+              sum(rate(http_requests_total{job="web",status=~"5.."}[5m]))
+              /
+              sum(rate(http_requests_total{job="web"}[5m]))
+            ) > (14.4 * 0.005)
+            and
+            (
+              sum(rate(http_requests_total{job="web",status=~"5.."}[1h]))
+              /
+              sum(rate(http_requests_total{job="web"}[1h]))
+            ) > (14.4 * 0.005)
+          for: 2m
+          labels:
+            severity: page
+          annotations:
+            summary: Web availability SLO is burning too fast
+        - alert: WebAvailabilitySlowBurn
+          expr: |
+            (
+              sum(rate(http_requests_total{job="web",status=~"5.."}[30m]))
+              /
+              sum(rate(http_requests_total{job="web"}[30m]))
+            ) > (6 * 0.005)
+            and
+            (
+              sum(rate(http_requests_total{job="web",status=~"5.."}[6h]))
+              /
+              sum(rate(http_requests_total{job="web"}[6h]))
+            ) > (6 * 0.005)
+          for: 15m
+          labels:
+            severity: ticket
+          annotations:
+            summary: Web availability SLO is burning over a sustained window
+
