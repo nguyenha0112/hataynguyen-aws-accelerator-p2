@@ -6,9 +6,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/nguyenha0112/lab-Argo-CD-w9.git
+    repoURL: https://github.com/nguyenha0112/hataynguyen-aws-accelerator-p2.git
     targetRevision: main
-    path: cloud/w9/lab/manifests
+    path: w9/lab/manifests
   destination:
     server: https://kubernetes.default.svc
     namespace: mini-platform
