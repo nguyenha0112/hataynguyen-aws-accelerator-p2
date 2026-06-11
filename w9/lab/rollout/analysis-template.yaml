@@ -6,10 +6,10 @@ metadata:
 spec:
   metrics:
     - name: error-rate
-      interval: 1m
-      count: 3
+      interval: 5s
+      count: 1
       successCondition: result[0] < 0.05
-      failureLimit: 1
+      failureLimit: 0
       provider:
         prometheus:
           address: http://prometheus-operated.observability.svc.cluster.local:9090
@@ -17,4 +17,3 @@ spec:
             sum(rate(http_requests_total{job="web",status=~"5.."}[5m]))
             /
             sum(rate(http_requests_total{job="web"}[5m]))
-
