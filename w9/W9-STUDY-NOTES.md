@@ -1280,3 +1280,292 @@ Stop-Process -Name kubectl
 ```
 
 Chỉ dừng khi bạn không cần mở UI nữa.
+
+## 36. Thiết Lập Để Lab W9 Xuất Hiện Trên ArgoCD UI
+
+Phần này ghi lại đúng thứ tự mình đã làm khi bạn thấy ArgoCD UI còn trống. Lý do UI trống là: mới cài ArgoCD controller thôi, chưa tạo `Application` nào trong namespace `argocd`.
+
+### Bước 1 - Hiểu ArgoCD UI Đang Hiển Thị Gì
+
+ArgoCD UI không tự hiện repo GitHub. Nó chỉ hiện các resource kind `Application` của ArgoCD.
+
+Nếu chạy:
+
+```powershell
+kubectl get applications -n argocd
+```
+
+mà thấy:
+
+```text
+No resources found in argocd namespace.
+```
+
+thì trên web chưa có app nào là đúng.
+
+Muốn app xuất hiện trên web, cần apply các file:
+
+```text
+cloud/w9/lab/argocd/platform-app.yaml
+cloud/w9/lab/argocd/rollout-app.yaml
+```
+
+### Bước 2 - Đẩy Repo Lên GitHub
+
+ArgoCD là pull-based. Nó không lấy manifest trực tiếp từ máy local của bạn. Nó cần một repo GitHub có chứa manifest.
+
+Trong lab này, repo cũ đang dùng là:
+
+```text
+https://github.com/nguyenha0112/hataynguyen-aws-accelerator-p2.git
+```
+
+Push code lên repo:
+
+```powershell
+cd C:\Users\Admin\Desktop\githuh-daly-xbrain\cloud
+git remote -v
+git add w9
+git commit -m "Add W9 ArgoCD lab notes"
+git push -u origin main
+```
+
+Nếu remote đang trỏ sai repo, đổi lại:
+
+```powershell
+git remote set-url origin https://github.com/nguyenha0112/hataynguyen-aws-accelerator-p2.git
+```
+
+Lưu ý trong máy này, repo Git thật nằm ở:
+
+```text
+C:\Users\Admin\Desktop\githuh-daly-xbrain\cloud
+```
+
+Không phải folder ngoài:
+
+```text
+C:\Users\Admin\Desktop\githuh-daly-xbrain
+```
+
+Vì vậy path trong ArgoCD phải bắt đầu từ `w9/...`, không phải `cloud/w9/...`.
+
+### Bước 3 - Sửa `repoURL` Và `path` Trong ArgoCD Application
+
+File:
+
+```text
+cloud/w9/lab/argocd/platform-app.yaml
+```
+
+Nội dung đúng:
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: w9-mini-platform
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/nguyenha0112/hataynguyen-aws-accelerator-p2.git
+    targetRevision: main
+    path: w9/lab/manifests
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: mini-platform
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+```
+
+File:
+
+```text
+cloud/w9/lab/argocd/rollout-app.yaml
+```
+
+Nội dung đúng:
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: w9-rollout
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/nguyenha0112/hataynguyen-aws-accelerator-p2.git
+    targetRevision: main
+    path: w9/lab/rollout
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: mini-platform
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+```
+
+Nếu `path` sai, ArgoCD sẽ không tìm thấy manifest. Nếu `repoURL` sai, ArgoCD sẽ không clone được repo.
+
+### Bước 4 - Apply Application Để App Hiện Trên Web
+
+Chạy từ thư mục ngoài workspace:
+
+```powershell
+cd C:\Users\Admin\Desktop\githuh-daly-xbrain
+kubectl apply -f cloud\w9\lab\argocd\platform-app.yaml
+kubectl apply -f cloud\w9\lab\argocd\rollout-app.yaml
+```
+
+Kết quả mong muốn:
+
+```text
+application.argoproj.io/w9-mini-platform created
+application.argoproj.io/w9-rollout created
+```
+
+Sau đó kiểm tra:
+
+```powershell
+kubectl get applications -n argocd
+```
+
+Bạn sẽ thấy:
+
+```text
+NAME               SYNC STATUS   HEALTH STATUS
+w9-mini-platform   Synced        Healthy
+w9-rollout         OutOfSync     Missing
+```
+
+Hoặc nếu mọi thứ đã đủ CRD:
+
+```text
+NAME               SYNC STATUS   HEALTH STATUS
+w9-mini-platform   Synced        Healthy
+w9-rollout         Synced        Healthy
+```
+
+Lúc này ArgoCD UI sẽ xuất hiện 2 app:
+
+- `w9-mini-platform`
+- `w9-rollout`
+
+### Bước 5 - Nếu `w9-rollout` Báo Missing Hoặc SyncFailed
+
+Trong lần chạy này, `w9-mini-platform` sync thành công trước. `w9-rollout` ban đầu lỗi vì cluster chưa cài Argo Rollouts CRD.
+
+Lỗi trong `describe application`:
+
+```text
+AnalysisTemplate.argoproj.io "" not found
+Rollout.argoproj.io "" not found
+```
+
+Nghĩa là Kubernetes chưa biết kind:
+
+- `Rollout`
+- `AnalysisTemplate`
+
+Cách sửa: cài Argo Rollouts controller.
+
+```powershell
+kubectl create namespace argo-rollouts
+kubectl apply -n argo-rollouts -f https://github.com/argoproj/argo-rollouts/releases/latest/download/install.yaml
+```
+
+Kiểm tra:
+
+```powershell
+kubectl get pods -n argo-rollouts
+```
+
+Kết quả mong muốn:
+
+```text
+NAME                             READY   STATUS    RESTARTS
+argo-rollouts-xxxxxxxxxx-xxxxx   1/1     Running   0
+```
+
+Sau khi CRD đã có, ArgoCD sẽ tự retry nếu automated sync còn đang chạy. Nếu chưa tự sync, apply lại app hoặc refresh/sync trên UI:
+
+```powershell
+kubectl apply -f cloud\w9\lab\argocd\rollout-app.yaml
+kubectl get applications -n argocd
+```
+
+### Bước 6 - Đọc Trạng Thái Trên ArgoCD UI
+
+Trong web UI:
+
+- `Synced`: resource trong cluster khớp với Git.
+- `OutOfSync`: Git và cluster đang lệch.
+- `Healthy`: resource chạy ổn.
+- `Missing`: resource trong Git nhưng chưa tạo được trong cluster.
+- `Degraded`: resource đã tạo nhưng có lỗi.
+
+Với lab này:
+
+- `w9-mini-platform` quản lý namespace/config/service.
+- `w9-rollout` quản lý rollout canary và analysis template.
+
+Nếu app màu vàng/đỏ, bấm vào app để xem resource nào lỗi. Xem thêm bằng CLI:
+
+```powershell
+kubectl describe application w9-mini-platform -n argocd
+kubectl describe application w9-rollout -n argocd
+```
+
+### Bước 7 - Kiểm Tra Resource Trong Cluster
+
+Kiểm tra platform:
+
+```powershell
+kubectl get all -n mini-platform
+```
+
+Bạn sẽ thấy các service:
+
+```text
+service/web-canary
+service/web-stable
+```
+
+Nếu rollout sync thành công, kiểm tra:
+
+```powershell
+kubectl get rollout -n mini-platform
+kubectl get analysistemplate -n mini-platform
+```
+
+Nếu chưa có plugin `kubectl argo rollouts`, vẫn có thể dùng `kubectl get rollout`.
+
+### Bước 8 - Tóm Tắt Luồng Hoàn Thành Lab ArgoCD
+
+Luồng đúng:
+
+```text
+1. Cài ArgoCD
+2. Push manifest lên GitHub
+3. Sửa repoURL/path trong Application
+4. kubectl apply Application vào namespace argocd
+5. ArgoCD UI xuất hiện app
+6. ArgoCD tự clone repo và sync resource
+7. Nếu thiếu CRD Rollout thì cài Argo Rollouts
+8. Kiểm tra app đạt Synced/Healthy
+```
+
+Điểm dễ nhầm:
+
+- Push GitHub xong chưa đủ để app hiện trên ArgoCD.
+- Phải apply `Application` vào namespace `argocd`.
+- ArgoCD không đọc file local, nó đọc repo GitHub.
+- Repo root là `cloud`, nên path đúng là `w9/lab/...`.
+- Rollout cần cài Argo Rollouts CRD trước.
