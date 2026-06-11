@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: w9-mini-platform
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/nguyenha0112/lab-Argo-CD-w9.git
+    targetRevision: main
+    path: cloud/w9/lab/manifests
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: mini-platform
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

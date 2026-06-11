@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: web-config
+  namespace: mini-platform
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+data:
+  APP_ENV: w9
+  DELIVERY_MODE: gitops-canary
+
