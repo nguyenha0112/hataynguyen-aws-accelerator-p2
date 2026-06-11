@@ -136,20 +136,37 @@ Lệnh apply PrometheusRule:
 kubectl apply -f cloud\w9\W9-D2_Observability_SLO_OTel\alert-rules\slo-burn-rate.yaml
 ```
 
-Kết quả local:
+Kết quả ban đầu nếu chưa có CRD:
 
 ```text
 no matches for kind "PrometheusRule" in version "monitoring.coreos.com/v1"
 ensure CRDs are installed first
 ```
 
+Sau đó đã cài CRD `PrometheusRule` từ Prometheus Operator và apply rule thành công.
+
+Lệnh đã chạy:
+
+```powershell
+kubectl apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_prometheusrules.yaml
+kubectl apply -f cloud\w9\W9-D2_Observability_SLO_OTel\alert-rules\slo-burn-rate.yaml
+kubectl get prometheusrule -n observability
+```
+
+Kết quả đạt:
+
+```text
+NAME                AGE
+web-slo-burn-rate   ...
+```
+
 Kết luận:
 
 - File SLO rule đã có trong repo.
-- Local cluster chưa cài Prometheus Operator nên chưa có CRD `prometheusrules.monitoring.coreos.com`.
-- Theo checklist lab, phần này được ghi chú là local stack chưa hỗ trợ PrometheusRule.
+- Local cluster đã có CRD `prometheusrules.monitoring.coreos.com`.
+- `PrometheusRule` đã tồn tại trong namespace `observability`.
 
-Muốn chạy đầy đủ alert rule thật, cần cài kube-prometheus-stack hoặc Prometheus Operator trước.
+Lưu ý: lab local dùng CRD và rule manifest để chứng minh phần SLO alert. Để evaluate alert giống production, cần Prometheus/Alertmanager đầy đủ.
 
 ## 7. Argo Rollouts Canary
 
@@ -208,32 +225,86 @@ Kết quả đạt:
 web-error-rate
 ```
 
-Lưu ý:
+AnalysisRun pass đã được tạo khi rollout đổi revision sang `nginx:1.28`.
 
-- Rollout hiện tại là initial deploy nên chưa có `AnalysisRun`.
-- Để sinh `AnalysisRun`, cần tạo một revision mới, ví dụ đổi image tag rồi để rollout đi qua các bước analysis.
-- Vì local chưa có Prometheus backend thật, analysis Prometheus có thể fail nếu chưa cài monitoring stack.
+Lệnh kiểm tra:
 
-## 8. Checklist Kết Luận
+```powershell
+kubectl get analysisrun -n mini-platform
+```
+
+Kết quả có các run thành công:
+
+```text
+web-bf89c9c96-2-2   Successful
+web-bf89c9c96-2-5   Successful
+```
+
+## 8. Bad Canary Abort
+
+Để tạo bad canary có kiểm soát trong local lab:
+
+- Fake Prometheus service `prometheus-operated` được cấu hình trả error-rate `1`.
+- `AnalysisTemplate` dùng `successCondition: result[0] < 0.05`.
+- Rollout được đổi revision để bắt đầu canary mới.
+
+Kết quả:
+
+```powershell
+kubectl get analysisrun -n mini-platform
+```
+
+Có AnalysisRun fail:
+
+```text
+web-58564bfd85-5-2   Failed
+```
+
+Rollout detail:
+
+```powershell
+kubectl describe rollout web -n mini-platform
+```
+
+Evidence abort:
+
+```text
+Abort: true
+Phase: Degraded
+RolloutAborted: Rollout aborted update to revision 5
+Metric "error-rate" assessed Failed due to failed (1) > failureLimit (0)
+```
+
+Sau khi ghi evidence, repo được restore về fake Prometheus trả `0` và image stable `nginx:1.28`. Trạng thái cuối:
+
+```text
+w9-mini-platform   Synced   Healthy
+w9-rollout         Synced   Healthy
+```
+
+## 9. Checklist Kết Luận
 
 | Yêu cầu | Trạng thái | Ghi chú |
 |---|---|---|
 | ArgoCD app Synced/Healthy | Đạt | `w9-mini-platform`, `w9-rollout` đều xanh |
 | Web service phản hồi | Đạt | `curl localhost:8081` trả nginx page |
 | OTel Collector | Đạt | Pod `otel-collector` Running |
-| PrometheusRule/SLO | Ghi chú hợp lệ | Thiếu Prometheus Operator CRD trong local |
+| PrometheusRule/SLO | Đạt | CRD đã cài, `web-slo-burn-rate` tồn tại |
 | Argo Rollouts controller | Đạt | Pod `argo-rollouts` Running |
 | Canary Rollout healthy | Đạt | Rollout `web` Healthy/Completed |
 | AnalysisTemplate tồn tại | Đạt | `web-error-rate` tồn tại |
-| Bad canary abort | Chưa chạy | Cần monitoring backend hoặc test cố ý fail |
+| AnalysisRun pass | Đạt | Có AnalysisRun `Successful` |
+| Bad canary abort | Đạt | Có AnalysisRun `Failed`, rollout từng `Abort: true` |
 
-## 9. Kết Luận Ngắn
+## 10. Kết Luận Ngắn
 
-Lab 1-7 đã đạt phần chạy chính:
+Lab 1-7 đã đạt đầy đủ:
 
 - GitOps qua ArgoCD hoạt động.
 - Platform app sync từ Git về cluster.
 - Argo Rollouts đã quản lý workload canary.
 - Observability collector đã chạy.
-
-Phần chưa chạy sâu là PrometheusRule evaluation và bad canary abort, vì local cluster chưa có Prometheus Operator/Prometheus backend.
+- PrometheusRule đã apply được sau khi cài CRD.
+- AnalysisRun pass đã có.
+- Bad canary abort đã được chứng minh.
+- Trạng thái cuối đã restore về `Synced/Healthy`.

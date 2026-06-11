@@ -217,10 +217,10 @@ kubectl get events -n mini-platform --sort-by=.lastTimestamp
 - [x] Web service phan hoi qua port-forward.
 - [x] Prometheus rule da ton tai hoac ghi chu vi sao local stack chua ho tro.
 - [x] Canary rollout dat trang thai healthy.
-- [ ] Bad canary bi abort boi analysis.
+- [x] Bad canary bi abort boi analysis.
 - [x] Ghi lai lenh rollback va giai thich vi sao rollback bang Git la uu tien.
 
-Evidence hien tai duoc ghi trong `evidence.md`. Local cluster chua cai Prometheus Operator nen `PrometheusRule` duoc ghi chu la chua ho tro CRD thay vi apply thanh cong.
+Evidence hien tai duoc ghi trong `evidence.md`. Local cluster da cai CRD `PrometheusRule`, da co `AnalysisRun` pass, va da co bad canary abort evidence.
 
 ## Bao Cao Ngan De Nop
 
