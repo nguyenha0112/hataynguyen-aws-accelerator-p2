@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: web
-          image: nginx:1.27
+          image: nginx:1.28
           ports:
             - containerPort: 80
   strategy:
@@ -23,13 +23,13 @@ spec:
       steps:
         - setWeight: 20
         - pause:
-            duration: 2m
+            duration: 5s
         - analysis:
             templates:
               - templateName: web-error-rate
         - setWeight: 50
         - pause:
-            duration: 2m
+            duration: 5s
         - analysis:
             templates:
               - templateName: web-error-rate

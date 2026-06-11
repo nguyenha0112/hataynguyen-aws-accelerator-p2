@@ -1,0 +1,50 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fake-prometheus-content
+  namespace: observability
+data:
+  query: |
+    {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[0,"0"]}]}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fake-prometheus
+  namespace: observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fake-prometheus
+  template:
+    metadata:
+      labels:
+        app: fake-prometheus
+    spec:
+      containers:
+        - name: fake-prometheus
+          image: nginx:1.27
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - name: content
+              mountPath: /usr/share/nginx/html/api/v1/query
+              subPath: query
+      volumes:
+        - name: content
+          configMap:
+            name: fake-prometheus-content
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus-operated
+  namespace: observability
+spec:
+  selector:
+    app: fake-prometheus
+  ports:
+    - name: http
+      port: 9090
+      targetPort: 80
