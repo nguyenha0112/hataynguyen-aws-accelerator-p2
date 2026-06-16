@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: bad-missing-labels
+  namespace: mini-platform
+spec:
+  containers:
+    - name: web
+      image: nginx:1.27

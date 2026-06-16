@@ -1,0 +1,24 @@
+name: W10 Trivy Image Scan
+
+on:
+  pull_request:
+    paths:
+      - "w10/**"
+      - ".github/workflows/w10-trivy.yml"
+  workflow_dispatch:
+
+jobs:
+  trivy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Scan sample image
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: "nginx:1.27"
+          format: "table"
+          severity: "HIGH,CRITICAL"
+          ignore-unfixed: true
+          exit-code: "1"

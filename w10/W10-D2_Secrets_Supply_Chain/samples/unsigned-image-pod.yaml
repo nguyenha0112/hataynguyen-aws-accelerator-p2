@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: unsigned-image
+  namespace: mini-platform
+  labels:
+    app.kubernetes.io/name: unsigned-image
+    app.kubernetes.io/owner: training
+spec:
+  containers:
+    - name: web
+      image: docker.io/library/nginx:1.27
