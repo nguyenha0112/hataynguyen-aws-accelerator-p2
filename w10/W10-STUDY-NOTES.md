@@ -39,7 +39,46 @@ Developer commit code
 
 ## Day 1 - RBAC Và Admission Policy
 
-### 1. RBAC Là Gì?
+### 1. Trọng Tâm Theo Slide Buổi Sáng
+
+Slide buổi sáng tập trung vào `Secure & Operate: RBAC + Admission Policy`.
+
+Thông điệp chính:
+
+```text
+W8 có cluster.
+W9 có GitOps, observability, canary.
+W10 cần cluster-level enforcement: chặn lỗi ngay tại cluster, không dựa vào "dev nhớ làm đúng".
+```
+
+Vấn đề nếu cluster không có guardrail:
+
+| Rủi ro | Ví dụ | Hậu quả |
+|---|---|---|
+| Xóa nhầm production | User có quyền quá rộng chạy `kubectl delete` sai namespace | Service downtime |
+| Image không rõ nguồn gốc | Pull image từ registry lạ hoặc tag không pin version | CVE, khó audit |
+| Pod ăn hết tài nguyên node | Không khai báo `resources.limits` | Pod khác bị evict |
+| Mọi thứ nằm trong `default` namespace | 20 app dùng chung namespace | Lateral movement dễ hơn, khó phân quyền |
+
+Gốc của vấn đề:
+
+```text
+Kubernetes mặc định không tự chặn hết lỗi vận hành/security.
+Muốn chặn phải thêm 2 lớp kiểm soát:
+  1. RBAC: ai được làm gì?
+  2. Admission Policy: manifest có hợp lệ không?
+```
+
+Mục tiêu của phần slide:
+
+- Tạo 3 vai trò rõ ràng: `developer`, `sre`, `viewer`.
+- Dùng `kubectl auth can-i ... --as <user>` để nghiệm thu RBAC.
+- Cài OPA Gatekeeper qua GitOps.
+- Enforce 4 constraint quan trọng.
+- Viết thêm 1 custom policy bằng `ConstraintTemplate` + `Constraint`.
+- Mọi thay đổi đi qua Git/ArgoCD, không apply tay nếu đang làm theo lab GitOps.
+
+### 2. RBAC Là Gì?
 
 RBAC là Role-Based Access Control. Trong Kubernetes, RBAC trả lời câu hỏi:
 
@@ -55,7 +94,7 @@ ServiceAccount developer không được delete secrets.
 ServiceAccount viewer chỉ được get/list/watch.
 ```
 
-### 2. Các Thành Phần Chính Của RBAC
+### 3. Các Thành Phần Chính Của RBAC
 
 | Thành phần | Ý nghĩa | Ví dụ |
 |---|---|---|
@@ -64,7 +103,7 @@ ServiceAccount viewer chỉ được get/list/watch.
 | Resource | Đối tượng Kubernetes | pods, deployments, services, secrets |
 | Scope | Phạm vi quyền | namespace hoặc cluster |
 
-### 3. Role Và ClusterRole
+### 4. Role Và ClusterRole
 
 | Loại | Scope | Khi dùng |
 |---|---|---|
@@ -77,7 +116,7 @@ ServiceAccount viewer chỉ được get/list/watch.
 - `ClusterRole` có thể được bind trong một namespace bằng `RoleBinding`.
 - `ClusterRoleBinding` cấp quyền trên toàn cluster, nên cần hạn chế dùng.
 
-### 4. RoleBinding Và ClusterRoleBinding
+### 5. RoleBinding Và ClusterRoleBinding
 
 | Loại | Ý nghĩa | Rủi ro |
 |---|---|---|
@@ -92,7 +131,7 @@ viewer -> RoleBinding -> ClusterRole view trong mini-platform
 sre -> ClusterRoleBinding nếu thật sự cần thao tác cluster-wide
 ```
 
-### 5. Model Role Nên Có
+### 6. Model Role Nên Có
 
 | Role | Quyền nên có | Không nên có |
 |---|---|---|
@@ -106,7 +145,22 @@ Nguyên tắc:
 - Không dùng `cluster-admin` cho công việc hằng ngày.
 - Dùng `kubectl auth can-i` để kiểm tra trước khi giao quyền.
 
-### 6. Lệnh Kiểm Tra RBAC
+Theo slide lab buổi sáng, model user cụ thể là:
+
+| User | Vai trò | Quyền kỳ vọng |
+|---|---|---|
+| `alice` | developer | CRUD workload như deploy/pod/service chỉ trong namespace `demo` |
+| `bob` | sre | Xem và thao tác pod toàn cụm |
+| `carol` | viewer | Chỉ đọc toàn cụm: get/list/watch |
+
+Gợi ý thiết kế:
+
+- `alice` chỉ bị bó trong 1 namespace nên dùng `Role` + `RoleBinding`.
+- `bob` và `carol` cần phạm vi toàn cụm nên dùng `ClusterRole`.
+- `viewer` chỉ có `get/list/watch`, không có `create/update/delete`.
+- Nếu bind cho người dùng thật trong lab, dùng `subjects.kind: User`.
+
+### 7. Lệnh Kiểm Tra RBAC
 
 ```powershell
 kubectl auth can-i get pods -n mini-platform --as=system:serviceaccount:mini-platform:developer
@@ -115,13 +169,32 @@ kubectl auth can-i delete secrets -n mini-platform --as=system:serviceaccount:mi
 kubectl auth can-i get pods -A --as=system:serviceaccount:mini-platform:viewer
 ```
 
+Lệnh nghiệm thu theo slide:
+
+```powershell
+kubectl auth can-i create deploy -n demo --as alice
+kubectl auth can-i create deploy -n kube-system --as alice
+kubectl auth can-i get pods -A --as bob
+kubectl auth can-i delete nodes --as carol
+```
+
+Kết quả kỳ vọng:
+
+| Lệnh test | Kỳ vọng | Ý nghĩa |
+|---|---|---|
+| `can-i create deploy -n demo --as alice` | `yes` | Developer được deploy trong namespace của mình |
+| `can-i create deploy -n kube-system --as alice` | `no` | Developer không được đụng namespace hệ thống |
+| `can-i get pods -A --as bob` | `yes` | SRE xem được pod toàn cụm |
+| `can-i delete nodes --as carol` | `no` | Viewer không được thao tác phá hủy |
+
 Cách đọc kết quả:
 
 - `yes`: subject có quyền.
 - `no`: subject không có quyền.
 - Nếu kết quả không đúng mong đợi, kiểm tra lại `Role`, `RoleBinding`, namespace và tên service account.
+- `--as` là impersonation: admin giả lập user để kiểm tra authorization, chưa cần authentication thật.
 
-### 7. Admission Policy Là Gì?
+### 8. Admission Policy Là Gì?
 
 Admission policy kiểm tra nội dung object trước khi object được lưu vào cluster.
 
@@ -143,7 +216,7 @@ RBAC và Admission khác nhau:
 | Dựa trên subject, verb, resource | Dựa trên nội dung manifest |
 | Ví dụ: developer được create deployment | Ví dụ: deployment không được privileged |
 
-### 8. OPA Gatekeeper
+### 9. OPA Gatekeeper
 
 Gatekeeper là admission controller dùng OPA/Rego để validate Kubernetes object.
 
@@ -161,7 +234,138 @@ Ví dụ policy nên có:
 - Chặn image tag `latest`.
 - Bắt buộc resource request/limit.
 
-### 9. Audit Mode Và Enforce Mode
+Trong slide, 4 luật cần enforce là:
+
+| # | Luật cần chặn | Rủi ro giảm được |
+|---|---|---|
+| 1 | Cấm image tag `:latest` | Không biết version thật đang chạy, khó rollback/audit |
+| 2 | Bắt buộc có `resources.limits` | Pod có thể ăn hết tài nguyên node |
+| 3 | Cấm `runAsUser: 0` | Container chạy root, tăng blast radius khi bị khai thác |
+| 4 | Cấm `hostNetwork: true` | Pod dùng network namespace của node, rủi ro bảo mật cao |
+
+Nghiệm thu Gatekeeper theo slide:
+
+| Thử deploy | Kỳ vọng |
+|---|---|
+| Pod image `:latest` | reject |
+| Pod thiếu `resources.limits` | reject |
+| Pod `runAsUser: 0` | reject |
+| Pod `hostNetwork: true` | reject |
+| Pod hợp lệ: image pin version, có limits, non-root | pass |
+
+Điểm quan trọng:
+
+- Controller Gatekeeper phải được cài trước.
+- `ConstraintTemplate` phải có trước `Constraint`.
+- Nếu làm GitOps, nên dùng sync-wave hoặc tách app để đảm bảo thứ tự: controller -> template -> constraint.
+- Trước khi bật `deny`, nên chạy `warn`/audit để tránh tự chặn chính platform của mình.
+
+### 10. ConstraintTemplate Và Constraint
+
+`ConstraintTemplate` là nơi viết logic policy, thường bằng Rego.
+
+Nó định nghĩa:
+
+- Kind CRD mới mà Gatekeeper sinh ra.
+- Schema parameter nhận vào.
+- Logic vi phạm.
+
+Ví dụ tư duy:
+
+```text
+ConstraintTemplate K8sRequiredLabels:
+  - Nhận parameter labels.
+  - Đọc labels hiện có trên object.
+  - So sánh required labels với provided labels.
+  - Nếu thiếu label thì tạo violation.
+```
+
+`Constraint` là instance của template.
+
+Nó quyết định:
+
+- Áp policy vào kind nào.
+- Áp vào namespace nào.
+- Dùng parameter nào.
+- Chạy ở `deny`, `warn` hay audit.
+
+Ví dụ:
+
+```text
+Template: K8sRequiredLabels
+Constraint: require-owner-label
+Parameter: labels = ["owner"]
+Match: apps/Deployment
+Action: deny
+```
+
+Flow đầy đủ:
+
+```text
+ConstraintTemplate viết logic
+  -> Gatekeeper sinh CRD mới
+  -> Constraint dùng CRD đó và truyền parameter
+  -> Admission webhook reject manifest vi phạm
+```
+
+### 11. Custom Policy Theo Slide
+
+Slide yêu cầu tự viết thêm 1 custom `ConstraintTemplate` thay vì chỉ dùng thư viện có sẵn.
+
+Chọn 1 trong các đề:
+
+| Custom policy | Ý nghĩa |
+|---|---|
+| Reject Deployment nếu `replicas > 5` | Chặn scale quá mức trong namespace học/lab |
+| Bắt buộc workload có label `owner` | Truy vết trách nhiệm, cost, incident |
+| Chỉ cho image từ registry của bạn | Chặn image không rõ nguồn gốc |
+
+Yêu cầu nghiệm thu:
+
+- Có `ConstraintTemplate` tự viết.
+- Có `Constraint` áp dụng template đó.
+- Manifest vi phạm bị reject.
+- Manifest hợp lệ pass.
+- Commit vào Git và để ArgoCD sync nếu đang làm theo GitOps lab.
+
+### 12. GitOps Flow Cho RBAC + Gatekeeper
+
+Theo slide, lab không khuyến khích `kubectl apply` tay cho phần platform chính. Mọi thứ nên đi qua Git.
+
+Flow:
+
+```text
+Sửa YAML trong repo
+  -> commit
+  -> push
+  -> ArgoCD sync
+  -> cluster nhận RBAC/Gatekeeper policy
+  -> chạy lệnh nghiệm thu
+```
+
+Gợi ý cấu trúc từ slide:
+
+```text
+rbac/
+  roles.yaml
+  rolebindings.yaml
+
+gatekeeper/
+  constraints/
+
+argocd/apps/
+  rbac.yaml
+  gatekeeper.yaml
+```
+
+Deliverable:
+
+- `rbac/`: 3 role hoặc clusterrole + 3 binding.
+- `gatekeeper/constraints/`: 4 constraint bắt buộc + 1 custom policy.
+- `argocd/apps/*.yaml`: ArgoCD app quản lý RBAC và Gatekeeper.
+- Evidence: kết quả `auth can-i`, kết quả reject/pass của policy, trạng thái ArgoCD `Synced/Healthy`.
+
+### 13. Audit Mode Và Enforce Mode
 
 | Mode | Ý nghĩa | Khi dùng |
 |---|---|---|
@@ -176,7 +380,7 @@ Pattern an toàn:
 4. Sửa manifest hoặc tạo exception có lý do.
 5. Chuyển sang enforce/deny.
 
-### 10. Lỗi Hay Gặp Day 1
+### 14. Lỗi Hay Gặp Day 1
 
 | Lỗi | Nguyên nhân | Cách xử lý |
 |---|---|---|
@@ -184,6 +388,8 @@ Pattern an toàn:
 | Policy không chặn | Gatekeeper chưa ready hoặc constraint sai scope | Kiểm tra pod/log Gatekeeper |
 | Resource cũ vẫn tồn tại | Admission chỉ chặn create/update mới | Sửa hoặc recreate resource |
 | Policy quá chặt | Chưa chạy audit trước | Thu hẹp scope, thêm exception có expiry |
+| Constraint apply lỗi `no matches for kind` | ConstraintTemplate/CRD chưa tồn tại | Apply controller/template trước constraint |
+| Platform tự bị policy chặn | Workload platform cũng vi phạm 4 luật | Pin image, thêm limits, chạy non-root trước khi enforce |
 
 ## Day 2 - Secrets Và Supply Chain Security
 
@@ -568,8 +774,12 @@ kubectl get events -n mini-platform --sort-by=.lastTimestamp
 - [ ] Phân biệt được `Role` và `ClusterRole`.
 - [ ] Phân biệt được `RoleBinding` và `ClusterRoleBinding`.
 - [ ] Biết dùng `kubectl auth can-i`.
+- [ ] Nghiệm thu được `alice`, `bob`, `carol` bằng `kubectl auth can-i ... --as`.
 - [ ] Giải thích được admission policy nằm ở đâu trong Kubernetes API flow.
 - [ ] Phân biệt được `ConstraintTemplate` và `Constraint`.
+- [ ] Nêu được 4 constraint trọng tâm: cấm `:latest`, bắt buộc `resources.limits`, cấm `runAsUser: 0`, cấm `hostNetwork: true`.
+- [ ] Giải thích được vì sao phải apply Gatekeeper theo thứ tự controller -> template -> constraint.
+- [ ] Tự chọn được 1 custom policy và mô tả cách test reject/pass.
 - [ ] Biết vì sao nên audit trước khi enforce.
 
 ### Day 2
@@ -599,24 +809,36 @@ kubectl get events -n mini-platform --sort-by=.lastTimestamp
 3. Vì sao không nên cấp `cluster-admin` cho developer?
 4. Khi nào dùng `Role`, khi nào dùng `ClusterRole`?
 5. `ConstraintTemplate` khác `Constraint` như thế nào?
-6. Vì sao nên chạy policy ở audit mode trước?
-7. Vì sao Kubernetes Secret không nên commit vào Git?
-8. ESO giúp ích gì trong secret rotation?
-9. App đọc secret qua env var có tự nhận secret mới không?
-10. Trivy và Cosign giải quyết hai rủi ro khác nhau nào?
-11. Vì sao cần verify image ở admission layer dù CI đã scan/sign?
-12. Exception security thiếu expiry có vấn đề gì?
-13. `ResourceQuota` khác `LimitRange` như thế nào?
-14. Nếu pod `Pending`, bạn kiểm tra những gì?
+6. Vì sao `alice` nên bị giới hạn trong namespace `demo`?
+7. Vì sao `carol` không được `delete nodes`?
+8. Bốn constraint trọng tâm trong slide là gì?
+9. Vì sao cấm image tag `:latest`?
+10. Vì sao bắt buộc `resources.limits`?
+11. Vì sao cấm `runAsUser: 0`?
+12. Vì sao `hostNetwork: true` là rủi ro?
+13. Vì sao cần apply Gatekeeper theo thứ tự controller -> template -> constraint?
+14. Vì sao nên chạy policy ở audit/warn mode trước?
 15. Nếu ArgoCD sync fail vì policy reject, bạn debug từ đâu?
-16. Nếu workload bị quota chặn, ai nên approve tăng quota?
-17. Chaos test khác gì với phá hệ thống bừa bãi?
-18. Một runbook tốt cần những phần nào?
+16. Vì sao Kubernetes Secret không nên commit vào Git?
+17. ESO giúp ích gì trong secret rotation?
+18. App đọc secret qua env var có tự nhận secret mới không?
+19. Trivy và Cosign giải quyết hai rủi ro khác nhau nào?
+20. Vì sao cần verify image ở admission layer dù CI đã scan/sign?
+21. Exception security thiếu expiry có vấn đề gì?
+22. `ResourceQuota` khác `LimitRange` như thế nào?
+23. Nếu pod `Pending`, bạn kiểm tra những gì?
+24. Nếu workload bị quota chặn, ai nên approve tăng quota?
+25. Chaos test khác gì với phá hệ thống bừa bãi?
+26. Một runbook tốt cần những phần nào?
 
 ## Ghi Nhớ Ngắn Gọn
 
 - RBAC kiểm soát người thao tác.
 - Admission policy kiểm soát manifest.
+- Slide W10 sáng nhấn mạnh 2 câu hỏi: "ai được làm gì?" và "manifest có hợp lệ không?"
+- 3 vai trò trọng tâm: `developer`, `sre`, `viewer`.
+- 4 policy trọng tâm: cấm `:latest`, bắt buộc limits, cấm root, cấm hostNetwork.
+- Gatekeeper cần đúng thứ tự: controller trước, template sau, constraint cuối.
 - ESO giúp Git không chứa secret thật.
 - Trivy tìm CVE trước khi release.
 - Cosign chứng minh image đến từ nguồn tin cậy.
