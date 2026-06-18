@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: too-large-workload
+  namespace: mini-platform
+  labels:
+    app: too-large-workload
+    owner: platform-team
+    env: dev
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: too-large-workload
+  template:
+    metadata:
+      labels:
+        app: too-large-workload
+        owner: platform-team
+        env: dev
+    spec:
+      containers:
+        - name: web
+          image: nginx:1.27
+          resources:
+            requests:
+              cpu: "1"
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 2Gi

@@ -25,6 +25,7 @@ Tuan 10 chuyen platform tu "deploy duoc" sang "deploy co kiem soat va co guardra
 
 - `W10-D1_RBAC_Admission_Policy/`: RBAC, ServiceAccount, Gatekeeper policy.
 - `W10-D2_Secrets_Supply_Chain/`: External Secrets Operator, Trivy CI, Cosign signing.
+- `W10-D3_Platform_Integration/`: ResourceQuota, LimitRange, runbook, chaos test.
 
 ## Ket Qua Can Dat
 
